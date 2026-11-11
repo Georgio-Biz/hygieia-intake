@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<!--
+  HYGIEIA coaching intake (build, 11 Nov 2026).
+  Palette: Wine-Dark Sea. Structure: Alsos v2 (option B flow with the Sections sheet and the multi-file strip).
+  Static files only: index.html, styles.css, questions.js, app.js. No build step, no third-party scripts.
+  Network: the Supabase `intake` Edge Function (CONFIG in app.js), the signed upload URLs it returns, Google Fonts.
+-->
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#21141A" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4EEEA" media="(prefers-color-scheme: light)">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>HYGIEIA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Commissioner:wght,FLAR@400..600,0..100&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top" id="top" hidden>
+  <div class="row1 col">
+    <button class="back" id="topBack" type="button" aria-label="Back"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <span class="bartitle" id="barTitle"></span>
+    <span class="step" id="step"></span>
+  </div>
+  <div class="prog col" id="prog" role="progressbar" aria-valuemin="0" aria-valuemax="23" aria-valuenow="0"><i id="progFill"></i></div>
+</header>
+
+<div class="banners col" id="banners">
+  <p class="banner" id="offlineBanner" role="status" hidden></p>
+  <p class="banner warn" id="saveBanner" role="status" hidden></p>
+</div>
+
+<main id="main" class="main"></main>
+
+<div class="bar" id="bar" hidden>
+  <div class="col barin" id="barIn"></div>
+</div>
+
+<div class="toastwrap col" id="toastWrap" role="status" aria-live="polite"></div>
+<div class="sr" id="live" aria-live="polite"></div>
+<div class="sr" id="upLive" aria-live="polite"></div>
+
+<div class="sheetwrap" id="sheetWrap" hidden>
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
+</div>
+
+<script src="questions.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
