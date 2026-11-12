@@ -8,7 +8,7 @@
   /* ================================================================ CONFIG */
   var CONFIG = {
     FUNCTION_URL: 'https://mftjdzupjdxksupwqtdx.supabase.co/functions/v1/intake',
-    FORM_VERSION: '2026-11-12.2',
+    FORM_VERSION: '2026-11-12.3',
     SIZE_LIMIT_MB: 15,            // the server's limit (intake bucket and index.ts)
     REQUEST_TIMEOUT_MS: 30000,    // a send that takes longer counts as failed (build-spec 5)
     UNDO_MS: 5000,
@@ -24,24 +24,96 @@
   var LIMIT = CONFIG.SIZE_LIMIT_MB * 1024 * 1024;
   var QMAP = {};
   SECTIONS.forEach(function (s) { s.q.forEach(function (q) { QMAP[q.id] = { q: q, s: s }; }); });
-  // One question per screen (12 Nov 2026: no scrolling). Screens are numbered 1..NS; sections stay as the titles.
   var SCREENS = [];
-  // A question with an optional upload under its options gets the upload on a screen of its own,
-  // shown only when it applies (showWhen), so neither screen needs scrolling.
-  SECTIONS.forEach(function (s) {
-    s.first = SCREENS.length + 1;
-    s.q.forEach(function (q, i) {
-      var split = q.upload && q.t !== 'photos';
-      SCREENS.push({ s: s, q: [q], i: i, part: split ? 'main' : null });
-      if (split) SCREENS.push({ s: s, q: [q], i: i, part: 'upload' });
-    });
-    s.last = SCREENS.length;
-  });
-  var NS = SCREENS.length;
+  // Screens are packed at run time to fill the real viewport without scrolling (pack(), 12 Nov 2026).
+  // A question with an optional upload gets the upload on a screen of its own, shown only when it applies.
+  var NS = 0, AVAIL = 0, QIDX = {};
+  (function () { var k = 0; SECTIONS.forEach(function (s) { s.q.forEach(function (q) { QIDX[q.id] = k++; }); }); })();
   function scr(n) { return SCREENS[n - 1]; }
   function shown(n) { var x = scr(n); return x.part !== 'upload' || showUpload(x.q[0]); }
   function nextVis(n) { for (var k = n + 1; k <= NS; k++) if (shown(k)) return k; return null; }
   function prevVis(n) { for (var k = n - 1; k >= 1; k--) if (shown(k)) return k; return null; }
+  function keyOf(x) { return x.q[0].id + (x.part === 'upload' ? ':U' : ''); }
+  function findScreen(key) {
+    var up = /:U$/.test(key), id = String(key).replace(/:U$/, '');
+    for (var i = 0; i < SCREENS.length; i++) {
+      var x = SCREENS[i];
+      if ((x.part === 'upload') === up && x.q.some(function (q) { return q.id === id; })) return i + 1;
+    }
+    return up ? findScreen(id) : 1;
+  }
+  function partition(hs, hh, avail, gap, flex) {
+    var n = hs.length;
+    function cost(a, b) { var t = a === 0 ? hh : 0; for (var i = a; i < b; i++) t += hs[i] + (i > a ? gap : 0); return t; }
+    var N = 1, a0 = 0, i;
+    for (i = 1; i < n; i++) if (cost(a0, i + 1) > avail) { N++; a0 = i; }
+    // Same page count, but balanced: minimise the fullest page.
+    var best = [], cut = [];
+    for (var k = 0; k <= N; k++) { best.push([]); cut.push([]); for (i = 0; i <= n; i++) { best[k].push(Infinity); cut[k].push(0); } }
+    best[0][0] = 0;
+    for (k = 1; k <= N; k++) for (i = k; i <= n; i++) for (var j = k - 1; j < i; j++) {
+      var cc = cost(j, i), lf = avail - cc;
+      var stretch = false; for (var z = j; z < i; z++) if (flex[z]) stretch = true;
+      // Least squared leftover, so pages come out even; a page with a long-answer box has none (the box stretches).
+      var c = best[k - 1][j] + (lf < 0 ? 1e9 + cc : stretch ? 0 : lf * lf);
+      if (c < best[k][i]) { best[k][i] = c; cut[k][i] = j; }
+    }
+    var pages = [], end = n;
+    for (k = N; k >= 1; k--) { var st = cut[k][end], pg = []; for (i = st; i < end; i++) pg.push(i); pages.unshift(pg); end = st; }
+    return pages;
+  }
+  function cssNum(name, d) { var v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)); return isNaN(v) ? d : v; }
+  function pack() {
+    var probe = $('safeProbe'), safe = probe ? Math.max(0, probe.offsetHeight - 16) : 0;
+    var gap = cssNum('--qgap-min', 28);
+    AVAIL = Math.max(240, window.innerHeight - cssNum('--topfix', 51) - cssNum('--barfix', 85) - safe - cssNum('--padt', 20) - cssNum('--padb', 16));
+    document.documentElement.style.setProperty('--avail', AVAIL + 'px');
+    var box = document.createElement('div');
+    box.className = 'main measure'; box.setAttribute('aria-hidden', 'true');
+    box.style.width = els.main.getBoundingClientRect().width + 'px';
+    document.body.appendChild(box);
+    var out = [];
+    renderPart = 'main';
+    SECTIONS.forEach(function (s) {
+      box.innerHTML = '<div class="view sec">' + headHTML(s) + '<div class="qs">' + s.q.map(renderQ).join('') + '</div></div>';
+      var head = box.querySelector('.sechead');
+      var hh = head.offsetHeight + parseFloat(getComputedStyle(head).marginBottom || 0);
+      var hs = Array.prototype.map.call(box.querySelectorAll('.qs > .block'), function (b) { return b.offsetHeight; });
+      s.first = out.length + 1;
+      var flex = Array.prototype.map.call(box.querySelectorAll('.qs > .block'), function (b) { return !!b.querySelector(':scope > textarea'); });
+      partition(hs, hh, AVAIL, gap, flex).forEach(function (pg) {
+        var qs = pg.map(function (i) { return s.q[i]; });
+        out.push({ s: s, q: qs, i: pg[0], part: null });
+        qs.forEach(function (q) { if (q.upload && q.t !== 'photos') out.push({ s: s, q: [q], i: pg[0], part: 'upload' }); });
+      });
+      s.last = out.length;
+    });
+    renderPart = null;
+    box.remove();
+    SCREENS = out; NS = out.length;
+  }
+  function headHTML(s) {
+    var sp = s.t.lastIndexOf(' ');
+    var tt = esc(s.t.slice(0, sp + 1)) + '<span style="white-space:nowrap">' + esc(s.t.slice(sp + 1)) + svg('down', 'dn') + '</span>';
+    return '<header class="sechead"><h1 class="lt" id="h-sec" tabindex="-1"><button type="button" class="ltbtn" data-act="sheet" aria-haspopup="dialog">' + tt + '</button></h1>' +
+      (s.lead ? '<p class="lead">' + esc(s.lead) + '</p>' : '') + '</header>';
+  }
+  // Spread what's on the screen over the height it has: long-answer boxes stretch (CSS), short pages open their gaps.
+  function fit(v) {
+    var qs = v.querySelector('.qs'); if (!qs) return;
+    v.classList.remove('sparse'); v.classList.remove('tight'); v.style.removeProperty('--qgap');
+    v.classList.add('nat'); var used = v.offsetHeight; v.classList.remove('nat');
+    if (used > AVAIL) { v.classList.add('tight'); return; }   // one big question on a small phone: compact it
+    var left = AVAIL - used, n = qs.children.length, gap = cssNum('--qgap-min', 28);
+    if (left <= 0 || qs.querySelector('textarea')) return;
+    // Room to spare: open the follow-up boxes instead of hiding them behind a tap.
+    Array.prototype.forEach.call(v.querySelectorAll('.notepill'), function (np) {
+      if (left < 110) return;
+      np.hidden = true; np.nextElementSibling.hidden = false; left -= 84;
+    });
+    if (n > 1) v.style.setProperty('--qgap', Math.min(72, gap + left / n) + 'px');
+    if (left > AVAIL * 0.42) v.classList.add('sparse');
+  }
   var renderPart = null;  // 'main' leaves a split question's upload off; 'upload' renders only the upload
   (function () { var p = HY.selfCheck(); if (p.length) console.error('HYGIEIA intake data check failed: ' + p.join('; ')); })();
 
@@ -50,7 +122,7 @@
     top: $('top'), topBack: $('topBack'), barTitle: $('barTitle'), step: $('step'), prog: $('prog'), progFill: $('progFill'),
     banners: $('banners'), offlineBanner: $('offlineBanner'), saveBanner: $('saveBanner'),
     main: $('main'), bar: $('bar'), barIn: $('barIn'), toastWrap: $('toastWrap'), live: $('live'), upLive: $('upLive'),
-    sheetWrap: $('sheetWrap'), sheet: $('sheet'), scrim: $('scrim')
+    sheetWrap: $('sheetWrap'), sheet: $('sheet'), scrim: $('scrim'), side: $('side')
   };
 
   /* ---------------------------------------------------------------- helpers */
@@ -609,7 +681,7 @@
   function noteHTML(q) {
     if (!q.note) return '';
     var id = 'f-' + idOf(q.id) + 'n';
-    var pill = q.o && q.o.length > 4 && !data.A[q.id + 'n'];
+    var pill = !!q.o && !data.A[q.id + 'n'];
     if (pill) return '<button type="button" class="opt notepill" data-act="note" data-for="' + id + '">' + svg('plus') + '<span>' + esc(q.note) + '</span></button>' +
       '<div class="notewrap" hidden><label class="sub notelabel" for="' + id + '">' + esc(q.note) + '</label>' +
       '<input class="field" id="' + id + '" type="text" data-a="' + q.id + 'n" data-stop enterkeyhint="next" autocomplete="off" value=""></div>';
@@ -660,7 +732,7 @@
         }).join('');
         return '<fieldset class="block" data-q="' + q.id + '" data-stop' + describedBy([h]) + '><legend class="q' + (q.hint ? ' hq' : '') + '">' + esc(q.q) +
           (multi ? ' <span class="helper">' + esc(STR.pickAny) + '</span>' : '') + '</legend>' + hintHTML(q) +
-          '<div class="opts' + (q.o.length > 4 ? ' pills' : '') + '">' + rows + '</div>' + noteHTML(q) + (q.upload && renderPart !== 'main' ? '<div class="upl" id="ua-' + k + '"' + (showUpload(q) ? '' : ' hidden') + '>' + uploadInner(q) + '</div>' : '') + '</fieldset>';
+          '<div class="opts' + optClass(q) + '">' + rows + '</div>' + noteHTML(q) + (q.upload && renderPart !== 'main' ? '<div class="upl" id="ua-' + k + '"' + (showUpload(q) ? '' : ' hidden') + '>' + uploadInner(q) + '</div>' : '') + '</fieldset>';
       case 'scale':
         var radios = '';
         for (var n = 1; n <= 10; n++) {
@@ -677,6 +749,12 @@
     }
     return '';
   }
+  function optClass(q) {
+    var n = q.o.length, mx = Math.max.apply(null, q.o.map(function (o) { return o.length; }));
+    if ((n <= 6 && mx <= 5) || (n <= 3 && mx <= 10)) return ' seg seg' + n;
+    if (n > 4 || mx <= 14) return ' pills';
+    return '';
+  }
   function renderUploadScreen(q) {
     var k = idOf(q.id), u = q.upload;
     return '<fieldset class="block" data-q="' + q.id + '"><legend class="q' + (u.screenHint ? ' hq' : '') + '">' + esc(u.screenTitle || q.q) + '</legend>' +
@@ -687,7 +765,7 @@
     var k = idOf(q.id);
     var rows = q.o.map(function (o) { return '<button type="button" class="opt" data-rank="' + q.id + '" data-v="' + esc(o) + '" aria-pressed="false"><span>' + esc(o) + '</span><span class="mk" aria-hidden="true"></span></button>'; }).join('');
     return '<fieldset class="block" data-q="' + q.id + '" data-stop aria-describedby="h-' + k + '"><legend class="q hq">' + esc(q.q) + ' <span class="helper">' + esc(STR.inOrder) + '</span></legend>' +
-      hintHTML(q) + '<div class="opts' + (q.o.length > 4 ? ' pills' : '') + '" id="rk-' + k + '">' + rows + '</div><p class="rankmsg" id="rm-' + k + '" aria-live="polite"></p>' + noteHTML(q) + '</fieldset>';
+      hintHTML(q) + '<div class="opts' + optClass(q) + '" id="rk-' + k + '">' + rows + '</div><p class="rankmsg" id="rm-' + k + '" aria-live="polite"></p>' + noteHTML(q) + '</fieldset>';
   }
   function syncRanked(q) {
     var list = Array.isArray(data.A[q.id]) ? data.A[q.id] : [];
@@ -705,7 +783,7 @@
   function uploadInner(q, solo) {
     var u = q.upload, out = '';
     if (isTileUpload(q)) {
-      if (u.heading && !solo && !document.querySelector('.upl.solo#ua-' + idOf(q.id))) out += '<span class="slothead">' + esc(u.heading) + '</span>';
+      if (u.heading && !solo) out += '<span class="slothead">' + esc(u.heading) + '</span>';
       if (u.instruction) out += '<p class="slotsub">' + esc(u.instruction) + '</p>';
       out += '<div class="pgrid">' + u.slots.map(function (sl) { return tileHTML(q, sl); }).join('') + '</div>';
       if (u.count) {
@@ -780,7 +858,7 @@
     var q = QMAP[qid].q, box = document.getElementById('ua-' + idOf(qid));
     if (!box) return;
     var a = document.activeElement, key = focusKey || (a && box.contains(a) ? a.getAttribute('data-fkey') : null);
-    box.innerHTML = uploadInner(q);
+    box.innerHTML = uploadInner(q, box.classList.contains('solo'));
     if (q.upload.showWhen) box.hidden = !showUpload(q);
     hydrateThumbs(box);
     if (key) {
@@ -834,7 +912,7 @@
       r.el = view(wordmark() + '<p class="who"><span class="muted">' + esc(STR.from) + '</span> <b>' + esc(STR.fromName) + '</b></p>' +
         '<h1 class="hd" tabindex="-1"></h1><div class="wtext"><p>' + esc(STR.welcomeLead) + '</p><p>' + esc(STR.welcomeNote) + '</p>' +
         '<ul class="facts">' + STR.facts.map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('') +
-        '<li>' + esc(STR.factLastBefore) + '<b>' + esc(STR.factLastName) + '</b>' + esc(STR.factLastAfter) + '</li></ul></div>');
+        '<li>' + esc(STR.factLastBefore) + '<b>' + esc(STR.factLastName) + '</b>' + esc(STR.factLastAfter) + '</li></ul></div>', 'welcome');
       textEl(r.el, 'h1', first() ? fmt(STR.welcomeH, { first: first() }) : STR.welcomeHNoName);
       r.bar = { flat: true, primary: { label: STR.start, act: function () { go(1); } }, under: STR.underStart };
       return r;
@@ -854,23 +932,21 @@
       var sc = scr(to);
       s = sc.s;
       r.plain = false;
-      r.el = view('<h1 class="eb" id="h-sec" tabindex="-1"><button type="button" class="ebbtn" data-act="sheet" aria-haspopup="dialog"><span>' + esc(s.t) + '</span>' + svg('down', 'dn') + '</button></h1>' +
-        (sc.i === 0 && sc.part !== 'upload' && s.lead ? '<p class="lead sl">' + esc(s.lead) + '</p>' : '') +
-        '<div class="qs one">' + (sc.part === 'upload' ? sc.q.map(renderUploadScreen).join('') : (renderPart = sc.part, sc.q.map(renderQ).join(''))) + '</div>' +
-        '');
+      var up = sc.part === 'upload', firstPg = sc.i === 0 && !up;
+      renderPart = up ? 'upload' : 'main';
+      var body = sc.q.map(up ? renderUploadScreen : renderQ).join('');
       renderPart = null;
-      r.top = { back: function () { var pv = prevVis(to); go(pv || 'welcome'); }, title: s.t, sheet: true, large: true,
-        step: fmt(STR.step, { n: s.n }), now: s.n, frac: to / NS, valuetext: fmt(STR.progress, { n: s.n, title: s.t }) };
+      r.el = view((firstPg ? headHTML(s) : '<h1 class="sr" id="h-sec" tabindex="-1">' + esc(s.t) + '</h1>') + '<div class="qs">' + body + '</div>', 'sec');
+      r.top = { back: function () { var pv = prevVis(to); go(pv || 'welcome'); }, title: s.t, sheet: true, large: firstPg,
+        step: fmt(STR.step, { n: s.n }), now: s.n, frac: (QIDX[sc.q[0].id] + (up ? 1 : 0)) / TOTAL, valuetext: fmt(STR.progress, { n: s.n, title: s.t }) };
       var nv = nextVis(to);
       var label = (editFrom === s.n && (!nv || scr(nv).s.n !== s.n)) ? STR.backToReview : !nv ? STR.reviewMine : STR.next;
-      var cnt = sc.q.filter(qAnswered).length;
-      r.bar = { back: r.top.back, hint: true,
-        primary: { label: label, act: sectionNext }, under: (to === 1 && !cnt) ? STR.blank : '', underId: 'blankLine' };
-      if (sc.i === 0 && sc.part !== 'upload') r.live = fmt(STR.progress, { n: s.n, title: s.t });
+      r.bar = { back: r.top.back, hint: true, primary: { label: label, act: sectionNext } };
+      if (firstPg) r.live = fmt(STR.progress, { n: s.n, title: s.t });
       r.after = function () {
         sc.q.forEach(function (q) { if (q.rank) syncRanked(q); });
-        r.el.querySelectorAll('textarea').forEach(grow);
         hydrateThumbs(r.el);
+        fit(r.el);
       };
       return r;
     }
@@ -997,7 +1073,7 @@
   function updateBarUnder() {
     if (typeof cur !== 'number') return;
     var u = $('blankLine'); if (!u) return;
-    var empty = cur === 1 && scr(cur).q.filter(qAnswered).length === 0;
+    var empty = false;
     u.hidden = !empty; u.textContent = empty ? STR.blank : '';
     measure();
   }
@@ -1024,6 +1100,7 @@
     cur = to;
     if (typeof to === 'number' || to === 'review' || to === 'consent') {
       data.cur = to;
+      if (typeof to === 'number') data.curQ = keyOf(scr(to));
       if (typeof to === 'number' && data.visited.indexOf(scr(to).s.n) < 0) data.visited.push(scr(to).s.n);
       data.layout = 2;
       saveNow();
@@ -1065,7 +1142,7 @@
     }
     setBar(r.bar);
     if (r.after) r.after();
-    if (typeof to === 'number') watchLargeTitle(r.el.querySelector('#h-sec'));
+    renderSide(to, r);
     if (to === 'consent') wireConsent();
     var h1 = r.el.querySelector('h1');
     if (h1 && from != null) h1.focus({ preventScroll: true });
@@ -1073,6 +1150,36 @@
     measure();
   }
 
+  function repack(quiet) {
+    if (!data || !TOKEN_OK) return;
+    var before = SCREENS.map(function (x) { return x.q.length; }).join(',');
+    var key = typeof cur === 'number' ? keyOf(scr(cur)) : null;
+    pack();
+    if (typeof data.cur === 'number' && data.curQ) data.cur = findScreen(data.curQ);
+    if (quiet && before === SCREENS.map(function (x) { return x.q.length; }).join(',')) { var v0 = els.main.querySelector('.view.sec:not(.leaving)'); if (v0) fit(v0); return; }
+    if (quiet && isTextLike(document.activeElement)) return;
+    if (key) go(findScreen(key), { animate: false });
+  }
+  function renderSide(to, r) {
+    var h = r.el.querySelector('h1'), flow = typeof to === 'number' || to === 'review' || to === 'consent';
+    var html = wordmark();
+    if (to === 'welcome') html += '<p class="who"><span class="muted">' + esc(STR.from) + '</span> <b>' + esc(STR.fromName) + '</b></p>';
+    html += '<div class="sidemid"><p class="sidet" aria-hidden="true">' + esc(h ? h.textContent : '') + '</p>';
+    if (typeof to === 'number' && scr(to).s.lead) html += '<p class="sidelead" aria-hidden="true">' + esc(scr(to).s.lead) + '</p>';
+    html += '</div>';
+    if (flow) {
+      var here = typeof to === 'number' ? scr(to).s.chapter : 0;
+      html += '<nav class="sidenav" aria-label="' + esc(STR.sheetTitle) + '"><ol>';
+      INTAKE.chapters.forEach(function (ch) {
+        var secs = SECTIONS.filter(function (x) { return x.chapter === ch.n; });
+        var ca = secs.reduce(function (n, x) { return n + secCount(x); }, 0), ct = secs.reduce(function (n, x) { return n + x.q.length; }, 0);
+        html += '<li><button type="button" data-ch="' + ch.n + '"' + (ch.n === here ? ' aria-current="step"' : '') + '><span class="nm">' + esc(ch.title) + '</span><span class="ct">' + esc(fmt(STR.aOfT, { a: ca, t: ct })) + '</span></button></li>';
+      });
+      html += '</ol></nav>';
+      if (saveOk) html += '<p class="sidefoot">' + svg('check') + esc(STR.savedLabel) + '</p>';
+    }
+    els.side.innerHTML = html;
+  }
   function sectionNext() {
     flushSave();
     var n = cur, sc = scr(n), nv = nextVis(n);
@@ -1228,7 +1335,7 @@
   }
 
   /* ---------------------------------------------------------------- input handling (delegated) */
-  function grow(ta) { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; }
+  function grow(ta) { /* long-answer boxes fill the screen (CSS) and scroll inside; they no longer grow the page */ }
   function afterAnswerChange(qid) {
     saveSoon(true);
     updateBarUnder();
@@ -1433,14 +1540,31 @@
     window.addEventListener('pagehide', flushSave);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushSave(); });
     window.addEventListener('resize', measure);
+    var rpT = null, lastW = window.innerWidth, lastH = window.innerHeight;
+    window.addEventListener('resize', function () {
+      clearTimeout(rpT);
+      rpT = setTimeout(function () {
+        if (window.innerWidth === lastW && Math.abs(window.innerHeight - lastH) < 40) return;
+        if (isTextLike(document.activeElement)) return;   // the phone keyboard is up
+        lastW = window.innerWidth; lastH = window.innerHeight; repack();
+      }, 180);
+    });
+    els.side.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-ch]'); if (!b) return;
+      var sec = SECTIONS.filter(function (x) { return x.chapter === +b.getAttribute('data-ch'); })[0];
+      if (sec) go(sec.first);
+    });
     if (window.ResizeObserver) { var ro = new ResizeObserver(measure); ro.observe(els.bar); ro.observe(els.top); }
 
     if (!TOKEN_OK) { data = blankData(); go('bad'); return; }
 
     data = Object.assign(blankData(), loadLocal() || {});
-    // Saved before one-question screens: cur was a section number. Move to that section's first screen.
-    if (data.layout !== 2 && typeof data.cur === 'number') { data.cur = SECTIONS[Math.min(23, Math.max(1, data.cur)) - 1].first; }
-    data.layout = 2;
+    pack();
+    if (typeof data.cur === 'number') {
+      if (!data.curQ) { var inc = SECTIONS.filter(function (x) { return !secComplete(x); })[0]; data.curQ = (inc || SECTIONS[0]).q[0].id; }
+      data.cur = findScreen(data.curQ);
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { repack(true); });
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(data.submissionKey || '')) data.submissionKey = makeKey();
     if (!Array.isArray(data.R)) data.R = [];
     // Tidy the file queue after a reload: anything mid-upload goes back in the queue; a remove inside its Undo window commits.
