@@ -206,7 +206,7 @@
     welcomeH: "{first}, let's get the full picture",
     welcomeHNoName: "Let's get the full picture",
     welcomeLead: 'Your food rules and training are coming. I want them built around your actual life, not a generic plan, so this comes first.',
-    welcomeNote: 'I know most of this from our chat, but so my AI can put the whole picture together, please give it all to me again here. Pretend I know nothing.',
+    welcomeNote: 'I know most of this from our chat, but so I can put the whole picture together, please give it all to me again here. Pretend I know nothing.',
     facts: [
       'About 20 to 30 minutes.',
       'It saves as you go on this device, so you can do it over a few sittings.',

@@ -8,7 +8,7 @@
   /* ================================================================ CONFIG */
   var CONFIG = {
     FUNCTION_URL: 'https://mftjdzupjdxksupwqtdx.supabase.co/functions/v1/intake',
-    FORM_VERSION: '2026-11-11.1',
+    FORM_VERSION: '2026-11-12.1',
     SIZE_LIMIT_MB: 15,            // the server's limit (intake bucket and index.ts)
     REQUEST_TIMEOUT_MS: 30000,    // a send that takes longer counts as failed (build-spec 5)
     UNDO_MS: 5000,
