@@ -8,7 +8,7 @@
   /* ================================================================ CONFIG */
   var CONFIG = {
     FUNCTION_URL: 'https://mftjdzupjdxksupwqtdx.supabase.co/functions/v1/intake',
-    FORM_VERSION: '2026-11-12.1',
+    FORM_VERSION: '2026-11-12.2',
     SIZE_LIMIT_MB: 15,            // the server's limit (intake bucket and index.ts)
     REQUEST_TIMEOUT_MS: 30000,    // a send that takes longer counts as failed (build-spec 5)
     UNDO_MS: 5000,
@@ -24,6 +24,25 @@
   var LIMIT = CONFIG.SIZE_LIMIT_MB * 1024 * 1024;
   var QMAP = {};
   SECTIONS.forEach(function (s) { s.q.forEach(function (q) { QMAP[q.id] = { q: q, s: s }; }); });
+  // One question per screen (12 Nov 2026: no scrolling). Screens are numbered 1..NS; sections stay as the titles.
+  var SCREENS = [];
+  // A question with an optional upload under its options gets the upload on a screen of its own,
+  // shown only when it applies (showWhen), so neither screen needs scrolling.
+  SECTIONS.forEach(function (s) {
+    s.first = SCREENS.length + 1;
+    s.q.forEach(function (q, i) {
+      var split = q.upload && q.t !== 'photos';
+      SCREENS.push({ s: s, q: [q], i: i, part: split ? 'main' : null });
+      if (split) SCREENS.push({ s: s, q: [q], i: i, part: 'upload' });
+    });
+    s.last = SCREENS.length;
+  });
+  var NS = SCREENS.length;
+  function scr(n) { return SCREENS[n - 1]; }
+  function shown(n) { var x = scr(n); return x.part !== 'upload' || showUpload(x.q[0]); }
+  function nextVis(n) { for (var k = n + 1; k <= NS; k++) if (shown(k)) return k; return null; }
+  function prevVis(n) { for (var k = n - 1; k >= 1; k--) if (shown(k)) return k; return null; }
+  var renderPart = null;  // 'main' leaves a split question's upload off; 'upload' renders only the upload
   (function () { var p = HY.selfCheck(); if (p.length) console.error('HYGIEIA intake data check failed: ' + p.join('; ')); })();
 
   var $ = function (id) { return document.getElementById(id); };
@@ -590,6 +609,10 @@
   function noteHTML(q) {
     if (!q.note) return '';
     var id = 'f-' + idOf(q.id) + 'n';
+    var pill = q.o && q.o.length > 4 && !data.A[q.id + 'n'];
+    if (pill) return '<button type="button" class="opt notepill" data-act="note" data-for="' + id + '">' + svg('plus') + '<span>' + esc(q.note) + '</span></button>' +
+      '<div class="notewrap" hidden><label class="sub notelabel" for="' + id + '">' + esc(q.note) + '</label>' +
+      '<input class="field" id="' + id + '" type="text" data-a="' + q.id + 'n" data-stop enterkeyhint="next" autocomplete="off" value=""></div>';
     return '<label class="sub notelabel" for="' + id + '">' + esc(q.note) + '</label>' +
       '<input class="field" id="' + id + '" type="text" data-a="' + q.id + 'n" data-stop enterkeyhint="next" autocomplete="off" value="' + esc(data.A[q.id + 'n'] || '') + '">';
   }
@@ -637,7 +660,7 @@
         }).join('');
         return '<fieldset class="block" data-q="' + q.id + '" data-stop' + describedBy([h]) + '><legend class="q' + (q.hint ? ' hq' : '') + '">' + esc(q.q) +
           (multi ? ' <span class="helper">' + esc(STR.pickAny) + '</span>' : '') + '</legend>' + hintHTML(q) +
-          '<div class="opts">' + rows + '</div>' + noteHTML(q) + (q.upload ? '<div class="upl" id="ua-' + k + '"' + (showUpload(q) ? '' : ' hidden') + '>' + uploadInner(q) + '</div>' : '') + '</fieldset>';
+          '<div class="opts' + (q.o.length > 4 ? ' pills' : '') + '">' + rows + '</div>' + noteHTML(q) + (q.upload && renderPart !== 'main' ? '<div class="upl" id="ua-' + k + '"' + (showUpload(q) ? '' : ' hidden') + '>' + uploadInner(q) + '</div>' : '') + '</fieldset>';
       case 'scale':
         var radios = '';
         for (var n = 1; n <= 10; n++) {
@@ -654,11 +677,17 @@
     }
     return '';
   }
+  function renderUploadScreen(q) {
+    var k = idOf(q.id), u = q.upload;
+    return '<fieldset class="block" data-q="' + q.id + '"><legend class="q' + (u.screenHint ? ' hq' : '') + '">' + esc(u.screenTitle || q.q) + '</legend>' +
+      (u.screenHint ? '<p class="hint">' + esc(u.screenHint) + '</p>' : '') +
+      '<div class="upl solo" id="ua-' + k + '">' + uploadInner(q, true) + '</div></fieldset>';
+  }
   function renderRanked(q) {
     var k = idOf(q.id);
     var rows = q.o.map(function (o) { return '<button type="button" class="opt" data-rank="' + q.id + '" data-v="' + esc(o) + '" aria-pressed="false"><span>' + esc(o) + '</span><span class="mk" aria-hidden="true"></span></button>'; }).join('');
     return '<fieldset class="block" data-q="' + q.id + '" data-stop aria-describedby="h-' + k + '"><legend class="q hq">' + esc(q.q) + ' <span class="helper">' + esc(STR.inOrder) + '</span></legend>' +
-      hintHTML(q) + '<div class="opts" id="rk-' + k + '">' + rows + '</div><p class="rankmsg" id="rm-' + k + '" aria-live="polite"></p>' + noteHTML(q) + '</fieldset>';
+      hintHTML(q) + '<div class="opts' + (q.o.length > 4 ? ' pills' : '') + '" id="rk-' + k + '">' + rows + '</div><p class="rankmsg" id="rm-' + k + '" aria-live="polite"></p>' + noteHTML(q) + '</fieldset>';
   }
   function syncRanked(q) {
     var list = Array.isArray(data.A[q.id]) ? data.A[q.id] : [];
@@ -673,10 +702,10 @@
 
   function isTileUpload(q) { return q.upload.kind === 'photo'; }
   function showUpload(q) { return !q.upload.showWhen || data.A[q.id] === q.upload.showWhen || liveFiles(q.id).length > 0; }
-  function uploadInner(q) {
+  function uploadInner(q, solo) {
     var u = q.upload, out = '';
     if (isTileUpload(q)) {
-      if (u.heading) out += '<span class="slothead">' + esc(u.heading) + '</span>';
+      if (u.heading && !solo && !document.querySelector('.upl.solo#ua-' + idOf(q.id))) out += '<span class="slothead">' + esc(u.heading) + '</span>';
       if (u.instruction) out += '<p class="slotsub">' + esc(u.instruction) + '</p>';
       out += '<div class="pgrid">' + u.slots.map(function (sl) { return tileHTML(q, sl); }).join('') + '</div>';
       if (u.count) {
@@ -812,7 +841,7 @@
     }
     if (to === 'resume') {
       var c = data.cur, lead;
-      if (typeof c === 'number') lead = fmt(STR.resumeLead, { title: SECTIONS[c - 1].t, n: c });
+      if (typeof c === 'number') lead = fmt(STR.resumeLead, { title: scr(c).s.t, n: scr(c).s.n });
       else lead = STR.resumeLeadReview;
       r.el = view(wordmark() + '<h1 class="hd" tabindex="-1" style="margin-top:8px"></h1><p class="lead" style="margin-top:8px;color:var(--hy-text)">' + esc(lead) + '</p>');
       textEl(r.el, 'h1', first() ? fmt(STR.resumeH, { first: first() }) : STR.resumeHNoName);
@@ -822,22 +851,24 @@
       return r;
     }
     if (typeof to === 'number') {
-      s = SECTIONS[to - 1];
+      var sc = scr(to);
+      s = sc.s;
       r.plain = false;
-      var sp = s.t.lastIndexOf(' ');
-      var tt = esc(s.t.slice(0, sp + 1)) + '<span style="white-space:nowrap">' + esc(s.t.slice(sp + 1)) + svg('down', 'dn') + '</span>';
-      r.el = view('<h1 class="lt" id="h-sec" tabindex="-1"><button type="button" class="ltbtn" data-act="sheet" aria-haspopup="dialog">' + tt + '</button></h1>' +
-        (s.lead ? '<p class="lead">' + esc(s.lead) + '</p>' : '') +
-        '<div class="qs">' + s.q.map(renderQ).join('') + '</div>' +
-        '<p class="savedline" id="savedLine"' + (saveOk ? '' : ' hidden') + '>' + svg('check') + esc(STR.savedLabel) + '</p>');
-      r.top = { back: function () { go(to > 1 ? to - 1 : 'welcome'); }, title: s.t, sheet: true, large: true,
-        step: fmt(STR.step, { n: to }), now: to, valuetext: fmt(STR.progress, { n: to, title: s.t }) };
-      var label = editFrom === to ? STR.backToReview : to === 23 ? STR.reviewMine : STR.next;
+      r.el = view('<h1 class="eb" id="h-sec" tabindex="-1"><button type="button" class="ebbtn" data-act="sheet" aria-haspopup="dialog"><span>' + esc(s.t) + '</span>' + svg('down', 'dn') + '</button></h1>' +
+        (sc.i === 0 && sc.part !== 'upload' && s.lead ? '<p class="lead sl">' + esc(s.lead) + '</p>' : '') +
+        '<div class="qs one">' + (sc.part === 'upload' ? sc.q.map(renderUploadScreen).join('') : (renderPart = sc.part, sc.q.map(renderQ).join(''))) + '</div>' +
+        '');
+      renderPart = null;
+      r.top = { back: function () { var pv = prevVis(to); go(pv || 'welcome'); }, title: s.t, sheet: true, large: true,
+        step: fmt(STR.step, { n: s.n }), now: s.n, frac: to / NS, valuetext: fmt(STR.progress, { n: s.n, title: s.t }) };
+      var nv = nextVis(to);
+      var label = (editFrom === s.n && (!nv || scr(nv).s.n !== s.n)) ? STR.backToReview : !nv ? STR.reviewMine : STR.next;
+      var cnt = sc.q.filter(qAnswered).length;
       r.bar = { back: r.top.back, hint: true,
-        primary: { label: label, act: sectionNext }, under: secCount(s) ? '' : STR.blank, underId: 'blankLine' };
-      r.live = fmt(STR.progress, { n: to, title: s.t });
+        primary: { label: label, act: sectionNext }, under: (to === 1 && !cnt) ? STR.blank : '', underId: 'blankLine' };
+      if (sc.i === 0 && sc.part !== 'upload') r.live = fmt(STR.progress, { n: s.n, title: s.t });
       r.after = function () {
-        s.q.forEach(function (q) { if (q.rank) syncRanked(q); });
+        sc.q.forEach(function (q) { if (q.rank) syncRanked(q); });
         r.el.querySelectorAll('textarea').forEach(grow);
         hydrateThumbs(r.el);
       };
@@ -846,25 +877,18 @@
     if (to === 'review') {
       r.plain = false;
       var answered = answeredTotal(), html = '';
+      // Review fits one screen (12 Nov 2026): one row per chapter; Edit opens the Sections sheet.
+      html = '<ol class="list chaplist">';
       INTAKE.chapters.forEach(function (ch) {
         var secs = SECTIONS.filter(function (x) { return x.chapter === ch.n; });
         var ca = secs.reduce(function (n, x) { return n + secCount(x); }, 0), ct = secs.reduce(function (n, x) { return n + x.q.length; }, 0);
-        html += '<section class="chap" aria-labelledby="ch' + ch.n + '"><div class="chead"><h2 id="ch' + ch.n + '">' + esc(ch.title) + '</h2><span class="c">' + esc(fmt(STR.aOfT, { a: ca, t: ct })) + '</span></div><ol class="list">';
-        secs.forEach(function (x) {
-          var a = secCount(x), done = secComplete(x);
-          var ctText = a ? fmt(STR.aOfT, { a: a, t: x.q.length }) : STR.skipped;
-          var photos = '';
-          x.q.forEach(function (q) {
-            if (q.t === 'photos') {
-              var n = q.upload.slots.filter(function (sl) { return liveFiles(q.id + ':' + sl.key).length; }).length;
-              if (n) photos = '<span class="ph">' + esc(fmt(STR.photosLine, { n: n })) + '</span>';
-            }
-          });
-          html += '<li><span class="rst" aria-hidden="true">' + (done ? svg('check') : '') + '</span><span class="tx"><span class="tx1"><span class="nm">' + esc(x.t) + '</span><span class="ct">' + esc(ctText) + '</span></span>' + photos + '</span>' +
-            '<button type="button" class="textbtn" data-act="edit" data-n="' + x.n + '" aria-label="' + esc(fmt(STR.editName, { title: x.t })) + '">' + esc(STR.edit) + '</button></li>';
-        });
-        html += '</ol></section>';
+        var done = secs.every(secComplete), ph = 0;
+        secs.forEach(function (x) { x.q.forEach(function (q) { if (q.upload) ph += liveFiles(q.id).length; }); });
+        html += '<li><span class="rst" aria-hidden="true">' + (done ? svg('check') : '') + '</span><span class="tx"><span class="tx1"><span class="nm">' + esc(ch.title) + '</span><span class="ct">' + esc(ca ? fmt(STR.aOfT, { a: ca, t: ct }) : STR.skipped) + '</span></span>' +
+          (ph ? '<span class="ph">' + esc(plural(ph, STR.onePhoto, STR.nPhotos)) + '</span>' : '') + '</span>' +
+          '<button type="button" class="textbtn" data-act="sheet" aria-haspopup="dialog" aria-label="' + esc(fmt(STR.editName, { title: ch.title })) + '">' + esc(STR.edit) + '</button></li>';
       });
+      html += '</ol>';
       var nudge = '';
       if (secCount(SECTIONS[7]) < 2 && !data.nudged) {
         data.nudged = true; saveSoon();
@@ -872,7 +896,7 @@
       }
       r.el = view('<h1 class="lt" tabindex="-1">' + esc(STR.reviewH) + '</h1><p class="sum">' + esc(fmt(STR.reviewSum, { answered: answered, total: TOTAL })) + '</p>' +
         '<p class="lead" style="margin-top:2px">' + esc(STR.reviewLead) + '</p>' + nudge + html);
-      r.top = { back: function () { go(23); }, title: STR.reviewTitle, step: STR.lastStep, now: 23, valuetext: STR.reviewTitle };
+      r.top = { back: function () { go(NS); }, title: STR.reviewTitle, step: STR.lastStep, now: 23, valuetext: STR.reviewTitle };
       r.bar = { back: r.top.back, primary: { label: STR.reviewPrimary, act: function () { go('consent'); } } };
       r.live = STR.reviewTitle;
       return r;
@@ -932,7 +956,7 @@
     els.step.textContent = t.step || '';
     els.prog.setAttribute('aria-valuenow', String(t.now));
     els.prog.setAttribute('aria-valuetext', t.valuetext);
-    els.progFill.style.transform = 'scaleX(' + (t.now / 23) + ')';
+    els.progFill.style.transform = 'scaleX(' + (t.frac != null ? t.frac : t.now / 23) + ')';
   }
   function watchLargeTitle(h1) {
     if (!h1 || !('IntersectionObserver' in window)) { els.top.classList.remove('large'); return; }
@@ -973,7 +997,7 @@
   function updateBarUnder() {
     if (typeof cur !== 'number') return;
     var u = $('blankLine'); if (!u) return;
-    var empty = secCount(SECTIONS[cur - 1]) === 0;
+    var empty = cur === 1 && scr(cur).q.filter(qAnswered).length === 0;
     u.hidden = !empty; u.textContent = empty ? STR.blank : '';
     measure();
   }
@@ -996,11 +1020,12 @@
     if (sheetOpen) closeSheet(null, true);
     flushSave();
     var from = cur;
-    if (typeof to === 'number' && to !== editFrom) editFrom = null;
+    if (typeof to === 'number' && editFrom != null && scr(to).s.n !== editFrom) editFrom = null;
     cur = to;
     if (typeof to === 'number' || to === 'review' || to === 'consent') {
       data.cur = to;
-      if (typeof to === 'number' && data.visited.indexOf(to) < 0) data.visited.push(to);
+      if (typeof to === 'number' && data.visited.indexOf(scr(to).s.n) < 0) data.visited.push(scr(to).s.n);
+      data.layout = 2;
       saveNow();
     }
     visitToasted = false;
@@ -1050,9 +1075,9 @@
 
   function sectionNext() {
     flushSave();
-    var n = cur;
-    if (editFrom === n) { editFrom = null; go('review'); return; }
-    go(n < 23 ? n + 1 : 'review');
+    var n = cur, sc = scr(n), nv = nextVis(n);
+    if (editFrom === sc.s.n && (!nv || scr(nv).s.n !== sc.s.n)) { editFrom = null; go('review'); return; }
+    go(nv || 'review');
   }
   function topBack() { if (els.topBack.onclick) els.topBack.onclick(); }
 
@@ -1162,7 +1187,7 @@
     INTAKE.chapters.forEach(function (ch) {
       html += '<div class="schap"><h3>' + esc(ch.title) + '</h3><ol class="slist">';
       SECTIONS.filter(function (x) { return x.chapter === ch.n; }).forEach(function (x) {
-        var a = secCount(x), here = cur === x.n, st;
+        var a = secCount(x), here = typeof cur === 'number' && scr(cur).s.n === x.n, st;
         if (here) st = esc(STR.here);
         else if (a) st = (secComplete(x) ? svg('check') : '') + esc(fmt(STR.aOfT, { a: a, t: x.q.length }));
         else if (data.visited.indexOf(x.n) >= 0) st = esc(STR.skipped);
@@ -1197,8 +1222,8 @@
     var finish = function () { els.sheetWrap.hidden = true; els.sheetWrap.classList.remove('closing'); };
     if (instant || reduced()) finish(); else { els.sheetWrap.classList.add('closing'); setTimeout(finish, 200); }
     if (typeof gotoN === 'number') {
-      if (gotoN === cur) { var h = $('h-sec'); window.scrollTo(0, 0); if (h) h.focus({ preventScroll: true }); }
-      else go(gotoN);
+      if (typeof cur === 'number' && scr(cur).s.n === gotoN) { var h = $('h-sec'); window.scrollTo(0, 0); if (h) h.focus({ preventScroll: true }); }
+      else { if (cur === 'review') editFrom = gotoN; go(SECTIONS[gotoN - 1].first); }
     } else if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus();
   }
 
@@ -1290,7 +1315,8 @@
     if (!act) return;
     var a = act.getAttribute('data-act'), fid = act.getAttribute('data-fid'), slot = act.getAttribute('data-slot');
     if (a === 'sheet') { openSheet(act); return; }
-    if (a === 'edit') { editFrom = +act.getAttribute('data-n'); go(editFrom); return; }
+    if (a === 'note') { var nw = act.nextElementSibling; nw.hidden = false; act.hidden = true; var nf = $(act.getAttribute('data-for')); if (nf) nf.focus(); return; }
+    if (a === 'edit') { editFrom = +act.getAttribute('data-n'); go(SECTIONS[editFrom - 1].first); return; }
     if (a === 'add') { pickFiles(slot); return; }
     if (a === 'replace') { pickFiles(slot, fid); return; }
     var rec = fid && findRec(fid);
@@ -1380,12 +1406,12 @@
   function onOnline() {
     updateBanners();
     if (typeof cur === 'number') toast(STR.backOnline, { ms: 2000 });
-    if (typeof cur === 'number') SECTIONS[cur - 1].q.forEach(function (q) { if (q.upload) refreshUpload(q.id); });
+    if (typeof cur === 'number') scr(cur).q.forEach(function (q) { if (q.upload) refreshUpload(q.id); });
     pump(); flushRemovals();
   }
   function onOffline() {
     updateBanners();
-    if (typeof cur === 'number') SECTIONS[cur - 1].q.forEach(function (q) { if (q.upload) refreshUpload(q.id); });
+    if (typeof cur === 'number') scr(cur).q.forEach(function (q) { if (q.upload) refreshUpload(q.id); });
   }
 
   /* ---------------------------------------------------------------- start */
@@ -1412,6 +1438,9 @@
     if (!TOKEN_OK) { data = blankData(); go('bad'); return; }
 
     data = Object.assign(blankData(), loadLocal() || {});
+    // Saved before one-question screens: cur was a section number. Move to that section's first screen.
+    if (data.layout !== 2 && typeof data.cur === 'number') { data.cur = SECTIONS[Math.min(23, Math.max(1, data.cur)) - 1].first; }
+    data.layout = 2;
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(data.submissionKey || '')) data.submissionKey = makeKey();
     if (!Array.isArray(data.R)) data.R = [];
     // Tidy the file queue after a reload: anything mid-upload goes back in the queue; a remove inside its Undo window commits.

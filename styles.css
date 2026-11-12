@@ -494,3 +494,82 @@ html.kb .bar { display: none; }
 
 /* gate 2 minor 3: keep the tick hint's space so Send doesn't move when the box is ticked */
 #tickHint.keep { visibility: hidden; }
+
+/* ---------------------------------------------------------------- One question per screen (12 Nov 2026)
+   Georgio: no scrolling on a page. Pattern: Apple setup / onboarding, one question per screen.
+   The section name sits above the question as a small label (tap it for the Sections sheet). */
+.main { padding-top: 20px; }
+.eb { margin: 0; }
+.ebbtn { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: -10px 0 0 -2px; padding: 0 6px 0 2px; font-size: 0.9375rem; line-height: 1.33; font-weight: 600; letter-spacing: 0.01em; color: var(--hy-text-muted); }
+.ebbtn .dn { width: 16px; height: 16px; stroke-width: 2; }
+.lead.sl { margin-top: 0; margin-bottom: 4px; }
+.qs.one { margin-top: 12px; }
+.qs.one .block + .block { margin-top: 0; padding-top: 0; border-top: 0; }
+.qs.one .savedline, .savedline { margin-top: 20px; }
+
+/* Long option lists (more than 5) wrap as pills instead of full-width rows, so they fit one screen. */
+.opts.pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; border-top: 0; }
+.opts.pills > div { display: contents; }
+.opts.pills .opt { width: auto; min-height: 44px; padding: 10px 16px; gap: 8px; justify-content: flex-start; border-radius: var(--r-md); background: var(--hy-surface); }
+.opts.pills .opt::after { display: none; }
+.opts.pills .opt .mk { display: none; width: auto; min-width: 16px; }
+.opts.pills input:checked + .opt .mk, .opts.pills .opt[aria-pressed="true"] .mk { display: block; }
+.opts.pills input:checked + .opt, .opts.pills .opt[aria-pressed="true"] { background: var(--hy-selected-bg); box-shadow: inset 0 0 0 1.5px var(--hy-text); }
+.opts.pills .opt:focus-visible, .opts.pills .sr:focus-visible + .opt { outline-offset: 2px; }
+.main { padding-top: 12px; }
+.ebbtn { margin-top: -6px; }
+.notelabel { margin-top: 16px; }
+.qs.one .pgrid { gap: 12px; margin-top: 16px; }
+.qs.one .add { height: 104px; }
+.qs.one .upl.solo { margin-top: 8px; }
+.main { padding-bottom: calc(var(--bar-h) + 16px); }
+@media (max-width: 767px) { .q { font-size: 1.5rem; line-height: 1.22; } legend.q { margin-bottom: 12px; } }
+.notepill { display: inline-flex; width: auto; min-height: 44px; margin-top: 8px; padding: 10px 16px 10px 12px; gap: 6px; justify-content: flex-start; border-radius: var(--r-md); background: transparent; box-shadow: inset 0 0 0 1px var(--hy-border-control); color: var(--hy-text-muted); }
+.notepill::after { display: none; }
+.notepill .i { width: 18px; height: 18px; stroke-width: 2; }
+.notewrap .notelabel { margin-top: 12px; }
+.qs.one .pgrid:has(> .tile:nth-child(3):last-child) { grid-template-columns: 1fr 1fr 1fr; }
+/* Four photo slots: rows (thumb left, label right), like a Settings list, so all four fit. */
+@media (max-width: 767px) {
+  .qs.one .pgrid:has(> .tile:nth-child(4)) { grid-template-columns: 1fr; gap: 10px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) > .tile { display: grid; grid-template-columns: 72px minmax(0, 1fr); column-gap: 14px; align-items: center; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) > .tile > :not(.add):not(.img) { grid-column: 2; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .add,
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .img { grid-column: 1; grid-row: 1 / span 4; width: 72px; height: 72px; aspect-ratio: 1; font-size: 0.75rem; gap: 2px; align-self: start; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .meta { margin-top: 0; }
+}
+@media (max-width: 767px) {
+  .qs.one { margin-top: 8px; }
+  .opts.pills { row-gap: 6px; margin-top: 12px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) { gap: 8px; margin-top: 12px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .add,
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .img { width: 64px; height: 64px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) > .tile { grid-template-columns: 64px minmax(0, 1fr); }
+}
+.main { padding-bottom: calc(var(--bar-h) + 8px); }
+.chaplist { margin-top: 20px; }
+@media (max-width: 767px) {
+  .who + .hd { margin-top: 12px; }
+  .hd { font-size: 1.75rem; }
+  .wtext { gap: 8px; font-size: 1rem; line-height: 1.45; }
+  .facts { gap: 6px; }
+}
+/* Short phones (iPhone SE and mini in Safari): tighter type and rows so screens still fit. */
+@media (max-width: 767px) and (max-height: 620px) {
+  .q { font-size: 1.3125rem; line-height: 1.24; }
+  legend.q { margin-bottom: 8px; }
+  .hint { margin-top: 4px; font-size: 0.875rem; }
+  .lead.sl, .lead { font-size: 0.9375rem; line-height: 1.45; }
+  .opt { min-height: 44px; padding-top: 9px; padding-bottom: 9px; }
+  .opts.pills .opt { min-height: 40px; padding: 8px 12px; font-size: 1rem; }
+  .bar { padding-top: 8px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .primary { min-height: 48px; }
+  .hd { font-size: 1.5rem; }
+  .wtext { font-size: 0.9375rem; line-height: 1.4; gap: 6px; }
+  .facts { gap: 4px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .add,
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .img { width: 52px; height: 52px; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) > .tile { grid-template-columns: 52px minmax(0, 1fr); }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .add { font-size: 0; gap: 0; }
+  .qs.one .pgrid:has(> .tile:nth-child(4)) .slotsub { font-size: 0.875rem; }
+}
